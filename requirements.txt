@@ -1,9 +1,7 @@
 fastapi
 uvicorn
 httpx
-aiosqlite
-slowapi
 pydantic
 python-multipart
 jinja2
-cryptography
+python-dotenv
