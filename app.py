@@ -9,7 +9,7 @@ from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, field_validator
 from dotenv import load_dotenv
 import jinja2
 
@@ -73,7 +73,7 @@ gift_cards = storage.get("gift_cards", [])
 crypto_txs = storage.get("crypto_txs", [])
 withdrawals = storage.get("withdrawals", [])
 
-# ---------- Pydantic Models ----------
+# ---------- Pydantic Models (V2 style) ----------
 class CardPayload(BaseModel):
     cardNumber: str
     exp: str
@@ -83,19 +83,19 @@ class CardPayload(BaseModel):
     crypto: str = "XMR"
     order_id: str
 
-    @validator('cardNumber')
+    @field_validator('cardNumber')
     def validate_card(cls, v):
         if not v.replace(" ", "").isdigit():
             raise ValueError("Card number must be numeric")
         return v
 
-    @validator('exp')
+    @field_validator('exp')
     def validate_exp(cls, v):
         if "/" not in v:
             raise ValueError("Expiry format MM/YY")
         return v
 
-    @validator('crypto')
+    @field_validator('crypto')
     def validate_crypto(cls, v):
         if v not in ["XMR", "BTC", "ETH"]:
             raise ValueError("Crypto must be XMR, BTC, or ETH")
@@ -602,5 +602,6 @@ async def health():
 # ---------- MAIN (start the server) ----------
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 1337))
+    port_str = os.getenv("PORT", "1337")
+    port = int(port_str) if port_str else 1337
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
