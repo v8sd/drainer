@@ -6,3 +6,4 @@ slowapi
 pydantic
 python-multipart
 jinja2
+cryptography
