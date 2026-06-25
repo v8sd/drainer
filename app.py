@@ -389,7 +389,6 @@ async def pay_crypto(request: Request):
     source = form.get("source_address", "")
     if amount <= 0:
         return JSONResponse({"error": "Amount must be > 0"}, status_code=400)
-    # Simulate price
     price = 60000 if currency == "BTC" else 3000 if currency == "ETH" else 1
     usd_value = amount * price
     usd_received = usd_value * 0.99
@@ -599,3 +598,9 @@ async def manual_burn(token: str = None):
 @app.get("/health")
 async def health():
     return {"status": "running", "total_laundered": total_laundered}
+
+# ---------- MAIN (start the server) ----------
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 1337))
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
